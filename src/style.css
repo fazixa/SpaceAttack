@@ -5,3 +5,10 @@
 @media(max-height:500px){.hud-top{height:38px;padding-bottom:5px}.label{font-size:6px;margin-bottom:2px}.hud-top strong{font-size:15px}.lives strong{font-size:12px;gap:3px}.menu-button{width:25px;height:25px;font-size:13px}.game-column{width:min(100%,720px,calc((100dvh - 82px) * .85714))}.overlay{padding:10px}.emblem{display:none}h2{font-size:36px;margin-bottom:12px}.run-stats{margin:10px 0 14px}.run-stats b{font-size:16px}.primary{padding:10px;font-size:10px}.menu-options{margin-top:6px;gap:5px}.menu-options button{font-size:6px}.instructions{font-size:10px}.help-title{font-size:25px}.instructions p{margin:12px 0}}
 @media(max-height:500px) and (pointer:coarse){.game-column{width:min(100%,720px,calc((100dvh - 128px) * .85714))}.touch-controls{gap:5px;padding-top:6px}.touch-controls button{height:36px;min-width:36px}.touch-controls button:last-child{min-width:65px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+/* Expand only the live scene. Menus retain their existing layout. */
+.scene-playing{position:fixed;inset:0;z-index:0;animation:scene-expand .8s cubic-bezier(.22,1,.36,1) both}
+.hud-top,.fuel-panel,.touch-controls{position:relative;z-index:1}
+.overlay,.wave-banner,.fuel-warning{z-index:2}
+@keyframes scene-expand{from{inset:var(--scene-top,0px) var(--scene-right,0px) var(--scene-bottom,0px) var(--scene-left,0px)}to{inset:0}}
+@media(prefers-reduced-motion:reduce){.scene-playing{animation:none}}
+.game-column{position:relative;z-index:0}.playfield-playing{background:transparent;border-color:transparent;box-shadow:none}
