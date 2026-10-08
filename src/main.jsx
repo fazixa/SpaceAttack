@@ -18,7 +18,7 @@ function App(){const shell=useRef(null),helpRef=useRef(false),viewport=useRef(nu
  const touch=(code,active)=>{keys.current[code]=active;};
  return <main className="shell" ref={shell}>
  <div className="game-column">
- <div className={'hud-top '+(overlay?'concealed':'')}>
+ <div className={'hud-top voxel-hud '+(overlay?'concealed':'')}>
  <div><span className="label">SCORE</span><strong>{format(hud.score)}</strong></div>
  <div className="wave"><span className="label">WAVE</span><strong>{String(hud.wave).padStart(2,'0')}</strong></div>
  <div className="lives"><span className="label">LIVES</span><strong aria-label={`${hud.lives} lives`}>{Array.from({length:Math.max(3,hud.lives)},(_,i)=><span className={i<hud.lives?'':'lost'} key={i}>▲</span>)}</strong></div>
@@ -38,7 +38,7 @@ function App(){const shell=useRef(null),helpRef=useRef(false),viewport=useRef(nu
  {hud.mode==='transition'&&<div className="wave-banner"><h2>WAVE {String(hud.wave).padStart(2,'0')} CLEAR</h2><p>Refueling…</p></div>}
  {hud.mode==='playing'&&hud.fuel<.2&&<div className="fuel-warning">LOW FUEL</div>}
  </div>
- <div className={'fuel-panel '+(hud.fuel<.2?'low ':'')+(overlay?'concealed':'')}><div className="fuel-title"><span>FUEL</span><b>{Math.ceil(hud.fuel*100)}%</b></div><div className="fuel-track"><div style={{width:`${hud.fuel*100}%`}}/></div></div>
+ <div className={'fuel-panel voxel-fuel '+(hud.fuel<.2?'low ':'')+(overlay?'concealed':'')}><div className="fuel-title"><span>FUEL</span><b>{Math.ceil(hud.fuel*100)}%</b></div><div className="fuel-track"><div style={{width:`${hud.fuel*100}%`}}/></div></div>
  <div className={'touch-controls '+(overlay?'concealed':'')}>{[['ArrowLeft','←','Move left'],['ArrowRight','→','Move right'],['Space','FIRE','Fire']].map(([code,label,name])=><button key={code} aria-label={name} onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);touch(code,true);}} onPointerUp={()=>touch(code,false)} onPointerCancel={()=>touch(code,false)} onLostPointerCapture={()=>touch(code,false)}>{label}</button>)}</div>
  </div></main>;
 

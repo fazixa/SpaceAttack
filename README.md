@@ -1,5 +1,5 @@
 # Space Attack — Orbital Defense
-A modern interpretation of the 1982 Emerson Arcadia 2001 shooter, built with React and Three.js. All ships, projectiles, stars, and debris are procedural; ships use beveled geometry and PBR metallic materials.
+A modern interpretation of the 1982 Emerson Arcadia 2001 shooter, built with React and Three.js. All artwork is procedural. The reference-inspired voxel scene includes two-pose alien animation at four frames per second, tilted block ships and lettering, edge meteors, reflective surfaces, and restrained bloom. Enemy materials are nonmetallic. The live score, wave, lives, and fuel are rendered in Three.js, with accessible text equivalents.
 
 ## Run locally
 
