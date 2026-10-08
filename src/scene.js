@@ -82,7 +82,9 @@ export function createScene(element){
  scene.add(new THREE.HemisphereLight(0x989ec6,0x171420,.3));
  const key=new THREE.DirectionalLight(0xffe6a7,1.8);key.position.set(-6,10,14);scene.add(key);
  const rim=new THREE.DirectionalLight(0x778eff,.35);rim.position.set(7,-3,9);scene.add(rim);
- const floor=new Reflector(new THREE.PlaneGeometry(180,180),{textureWidth:768,textureHeight:768,color:0x30363f});floor.position.z=-7;scene.add(floor);
+ // Lighting is shared by the background and the foreground gameplay pass.
+ scene.traverse(object=>{if(object.isLight)object.layers.enable(1);});
+ const floor=new Reflector(new THREE.PlaneGeometry(180,180),{textureWidth:768,textureHeight:768,color:0x30363f});floor.position.z=-7;floor.camera.layers.enable(1);scene.add(floor);
  // A circular blue wash beneath the scene, anchored to the full-page sky.
  let appearanceRadius=1.4,tiltAngle=THREE.MathUtils.degToRad(10),tiltPreview=0;
  floor.material.uniforms.skyRadius={value:18};
@@ -100,6 +102,11 @@ export function createScene(element){
  let lastDamageCount=0,impactStarted=-Infinity;
  let lastGameTime=0,lastRenderTime=performance.now()/1000;
  const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
+ // Clear meteor depth before drawing gameplay, preserving depth within each voxel model.
+ const gameplayCamera=camera.clone();gameplayCamera.layers.set(1);
+ const gameplayPass=new RenderPass(scene,gameplayCamera);gameplayPass.clear=false;gameplayPass.clearDepth=true;composer.addPass(gameplayPass);
+ const syncGameplayCamera=()=>{gameplayCamera.copy(camera);gameplayCamera.layers.set(1);};
+ const foreground=object=>{object.traverse(part=>part.layers.set(1));return object;};
  const hudPass=new RenderPass(hudScene,hudCamera);hudPass.clear=false;hudPass.clearDepth=true;composer.addPass(hudPass);
  const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.13,.07,0);composer.addPass(bloom);composer.addPass(new OutputPass());
  const stars=new THREE.InstancedMesh(blockGeometry,new THREE.MeshStandardMaterial({color:0xffefa4,emissive:0xffdf62,emissiveIntensity:.45,roughness:.85}),250);scene.add(stars);
@@ -109,16 +116,16 @@ export function createScene(element){
  const gameObjects=new THREE.Group();scene.add(gameObjects);
  // Screen-up is perpendicular to the camera view, unlike world Y with this pitched camera.
  const tiltAxis=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion).normalize();
- const player=makeShip();gameObjects.add(player);const enemies=new Map(),bullets=new Map(),effects=new Map();
+ const player=foreground(makeShip());gameObjects.add(player);const enemies=new Map(),bullets=new Map(),effects=new Map();
  const shotGeometry=new THREE.BoxGeometry(.09,.65,.14),shotMaterials={player:new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xeed7ff,emissiveIntensity:3}),enemy:new THREE.MeshStandardMaterial({color:0xffb467,emissive:0xff5a19,emissiveIntensity:2})};
  const hud=new THREE.Group();hudScene.add(hud);let scoreText,waveText,lifeText;let lastScore=-1,lastWave=-1,lastLives=-1;
  const fuelLabel=voxelText('E',COLORS.red,.13);hud.add(fuelLabel);
  const fuelMaterial=voxelMaterial(COLORS.green),fuelBlocks=new THREE.InstancedMesh(blockGeometry,fuelMaterial,24);hud.add(fuelBlocks);
  const lifeShips=new THREE.Group();hud.add(lifeShips);for(let i=0;i<5;i++){const ship=voxelMask(PLAYER,COLORS.green,.12,.25);ship.rotation.set(-.42,0,0);ship.position.x=i*1.08;lifeShips.add(ship);}
  const replaceText=(old,value,color,size)=>{if(old){hud.remove(old);old.traverse(object=>{if(object.isInstancedMesh)object.dispose();});}const text=voxelText(value,color,size);hud.add(text);return text;};
- const sync=(map,items,create,update)=>{const ids=new Set(items.map(i=>i.id));for(const [id,object]of map)if(!ids.has(id)){gameObjects.remove(object);object.traverse(part=>{if(part.isInstancedMesh)part.dispose();});if(object.userData.ownMaterial)object.material.dispose();map.delete(id);}for(const item of items){let object=map.get(item.id);if(!object){object=create(item);map.set(item.id,object);gameObjects.add(object);}update(object,item);}};
+ const sync=(map,items,create,update)=>{const ids=new Set(items.map(i=>i.id));for(const [id,object]of map)if(!ids.has(id)){gameObjects.remove(object);object.traverse(part=>{if(part.isInstancedMesh)part.dispose();});if(object.userData.ownMaterial)object.material.dispose();map.delete(id);}for(const item of items){let object=map.get(item.id);if(!object){object=foreground(create(item));map.set(item.id,object);gameObjects.add(object);}update(object,item);}};
  const ambientStart=performance.now();const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
- let halfWidth=12,halfHeight=14,scrollTime=0,lastBackgroundFrame=performance.now();
+ let halfWidth=12,hudHalfWidth=12,halfHeight=14,scrollTime=0,lastBackgroundFrame=performance.now();
  const updateStars=()=>{
   const extent=halfHeight*1.08,span=extent*2;
   starData.forEach((star,i)=>{
@@ -161,6 +168,9 @@ export function createScene(element){
   // Use the full page's world scale in every mode; menus crop that view.
   const scale=Math.min(window.innerWidth/24,window.innerHeight/28,720/24);
   halfWidth=window.innerWidth/(scale*2);halfHeight=window.innerHeight/(scale*2);
+  // Share the centered HUD width with the HTML pause button, independent of the sky.
+  const hudMaxWidth=parseFloat(getComputedStyle(element).getPropertyValue('--hud-max-width'))||960;
+  hudHalfWidth=Math.min(window.innerWidth,hudMaxWidth)/(scale*2);
   floor.material.uniforms.skyRadius.value=Math.min(halfWidth,halfHeight)*appearanceRadius;
   const bounds=element.getBoundingClientRect();
   const centerX=(bounds.left+width/2-window.innerWidth/2)/scale;
@@ -169,7 +179,7 @@ export function createScene(element){
   camera.top=centerY+height/(scale*2);camera.bottom=centerY-height/(scale*2);camera.updateProjectionMatrix();hudCamera.copy(camera);
   updateStars();
   updateMeteors();
-  renderer.setSize(width,height,false);composer.setSize(width,height);composer.render();
+  renderer.setSize(width,height,false);composer.setSize(width,height);syncGameplayCamera();composer.render();
  };
  const observer=new ResizeObserver(layout);observer.observe(element);window.addEventListener('resize',layout);layout();
  return {setAppearance(value){
@@ -190,10 +200,10 @@ export function createScene(element){
   if(g.score!==lastScore){scoreText=replaceText(scoreText,String(g.score).padStart(6,'0'),COLORS.yellow,.16);lastScore=g.score;}
   if(g.wave!==lastWave){waveText=replaceText(waveText,'W'+String(g.wave).padStart(2,'0'),COLORS.yellow,.13);lastWave=g.wave;}
   if(g.lives!==lastLives){lifeText=replaceText(lifeText,String(g.lives),COLORS.red,.13);lastLives=g.lives;}
-  const inset=.9;scoreText.position.set(-halfWidth+inset+.35,halfHeight-1.25,.6);waveText.position.set(halfWidth-waveText.userData.width-inset-1.3,halfHeight-1.25,.6);
-  fuelLabel.position.set(-halfWidth+inset,-halfHeight+1.35,.6);fuelBlocks.position.set(-halfWidth+inset+.75,-halfHeight+1.35,.6);
+  const inset=.9;scoreText.position.set(-hudHalfWidth+inset+.35,halfHeight-1.25,.6);waveText.position.set(hudHalfWidth-waveText.userData.width-inset-1.3,halfHeight-1.25,.6);
+  fuelLabel.position.set(-hudHalfWidth+inset,-halfHeight+1.35,.6);fuelBlocks.position.set(-hudHalfWidth+inset+.75,-halfHeight+1.35,.6);
   for(let i=0;i<24;i++){const filled=i<Math.ceil(g.fuel*24);matrix.compose(new THREE.Vector3(i*.24,0,0),new THREE.Quaternion().setFromEuler(new THREE.Euler(-.42,0,0)),new THREE.Vector3(.24,filled?.48:.06,.26));fuelBlocks.setMatrixAt(i,matrix);}fuelBlocks.instanceMatrix.needsUpdate=true;
-  lifeShips.position.set(halfWidth-4.6,-halfHeight+1.35,.6);lifeShips.children.forEach((ship,i)=>{ship.visible=i<Math.min(g.lives,3);});lifeText.position.set(halfWidth-1,-halfHeight+1.35,.6);
+  lifeShips.position.set(hudHalfWidth-4.6,-halfHeight+1.35,.6);lifeShips.children.forEach((ship,i)=>{ship.visible=i<Math.min(g.lives,3);});lifeText.position.set(hudHalfWidth-1,-halfHeight+1.35,.6);
   updateMeteors();
   const now=performance.now()/1000;
   const renderDt=Math.min(Math.max(0,now-lastRenderTime),.1),gameDt=g.elapsed-lastGameTime;
@@ -213,6 +223,7 @@ export function createScene(element){
   lastDamageCount=g.damageCount;
   const offset=impactOffset(now-impactStarted);
   camera.position.set(offset.x,-5+offset.y,40);
+  syncGameplayCamera();
   try{composer.render();}finally{camera.position.set(0,-5,40);camera.updateMatrixWorld();}
  },dispose(){observer.disconnect();window.removeEventListener('resize',layout);const geometries=new Set(),mats=new Set();const collect=o=>{if(o.geometry)geometries.add(o.geometry);if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);}};scene.traverse(collect);hudScene.traverse(collect);scene.traverse(object=>{if(object.isInstancedMesh)object.dispose();});hudScene.traverse(object=>{if(object.isInstancedMesh)object.dispose();});geometries.forEach(geometry=>geometry.dispose());mats.forEach(material=>material.dispose());floor.getRenderTarget().dispose();environment.dispose();bloom.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
 }
