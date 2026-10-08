@@ -1,3 +1,4 @@
+import {PixelText,PixelAlien} from './PixelText.jsx';
 import React,{useEffect,useRef,useState} from 'react';import {createRoot} from 'react-dom/client';
 import {createGame,spawnWave,startGame,updateGame} from './game.js';import {createScene} from './scene.js';import {createAudio} from './audio.js';import './style.css';
 const format=n=>String(n).padStart(6,'0');
@@ -25,12 +26,12 @@ function App(){const shell=useRef(null),helpRef=useRef(false),viewport=useRef(nu
  <button className="menu-button" aria-label="Pause and open menu" onClick={pause}>☰</button>
  </div>
  <div className={`playfield ${['playing','transition'].includes(hud.mode)?'playfield-playing':''}`}><div className={`scene ${['playing','transition'].includes(hud.mode)?'scene-playing':''}`} ref={viewport} tabIndex={0} aria-label="Space Attack game playfield"/>
- {overlay&&<div className="overlay"><div className="overlay-card">
+ {overlay&&<div className="overlay"><div className={`overlay-card menu-${hud.mode}`}>
  {help?<><h2 className="help-title">HOW TO PLAY</h2><div className="instructions"><div><span>Move</span><span><kbd>←</kbd> <kbd>→</kbd> / <kbd>A</kbd> <kbd>D</kbd></span></div><div><span>Fire</span><kbd>HOLD SPACE</kbd></div><div><span>Pause</span><kbd>ESC</kbd></div><p>Three lives. Dodge shots and diving enemies. Clear each wave to refill your fuel. Empty fuel ends the run.</p><div className="enemy-scores"><span className="red">Drone · 30</span><span className="green">Fighter · 60</span><span className="yellow">Commander · 100</span></div><p>Double points for diving enemies. Earn a bonus life at 5,000 points. Waves get faster and fuel time gets tighter.</p></div><button className="primary" onClick={()=>showHelp(false)}>BACK</button></>:<>
- <div className="emblem">✦</div><h2>{hud.mode==='gameover'?'GAME OVER':hud.mode==='paused'?'PAUSED':<>SPACE<br/>ATTACK</>}</h2>
+ <div className="emblem"><PixelAlien/></div><h2 className="arcade-title" aria-label={hud.mode==='gameover'?'GAME OVER':hud.mode==='paused'?'PAUSED':'SPACE ATTACK'}>{(hud.mode==='gameover'?['GAME','OVER']:hud.mode==='paused'?['PAUSED']:['SPACE','ATTACK']).map(word=><PixelText key={word}>{word}</PixelText>)}</h2>
  {hud.mode==='gameover'&&<p>{hud.reason}</p>}{error&&<p>{error}</p>}
- <div className="run-stats">{hud.mode!=='menu'&&<span>SCORE <b>{format(hud.score)}</b></span>}<span>PERSONAL BEST <b>{format(best)}</b></span></div>
- <button className="primary" disabled={!!error} onClick={hud.mode==='paused'?pause:begin}>{hud.mode==='paused'?'RESUME':hud.mode==='gameover'?'PLAY AGAIN':'PLAY'}<span>↗</span></button>
+ <div className="run-stats">{hud.mode!=='menu'&&<span>SCORE <b aria-label={format(hud.score)}><PixelText>{format(hud.score)}</PixelText></b></span>}<span>PERSONAL BEST <b aria-label={format(best)}><PixelText>{format(best)}</PixelText></b></span></div>
+ <button className="primary" disabled={!!error} onClick={hud.mode==='paused'?pause:begin} aria-label={hud.mode==='paused'?'RESUME':hud.mode==='gameover'?'PLAY AGAIN':'PLAY'}><PixelText>{hud.mode==='paused'?'RESUME':hud.mode==='gameover'?'PLAY AGAIN':'PLAY'}</PixelText><span className="pixel-arrow" aria-hidden="true"/></button>
  <div className="menu-options"><button onClick={()=>showHelp(true)}>HOW TO PLAY</button><button onClick={toggleSound}>{muted?'SOUND OFF':'SOUND ON'}</button></div>
  {hud.mode==='paused'&&<button className="quiet-button" onClick={()=>{game.current.mode='menu';showHelp(false);keys.current={};setHud({...game.current});}}>QUIT TO START</button>}
  </>}
