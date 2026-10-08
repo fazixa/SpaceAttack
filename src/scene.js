@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {impactOffset} from './cameraShake.js';
+import {updateObjectTilt} from './objectTilt.js';
 import {advanceMeteorTravel} from './background.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
@@ -83,7 +84,7 @@ export function createScene(element){
  const rim=new THREE.DirectionalLight(0x778eff,.35);rim.position.set(7,-3,9);scene.add(rim);
  const floor=new Reflector(new THREE.PlaneGeometry(180,180),{textureWidth:768,textureHeight:768,color:0x30363f});floor.position.z=-7;scene.add(floor);
  // A circular blue wash beneath the scene, anchored to the full-page sky.
- let appearanceRadius=1.4;
+ let appearanceRadius=1.4,tiltAngle=THREE.MathUtils.degToRad(10),tiltPreview=0;
  floor.material.uniforms.skyRadius={value:18};
  floor.material.uniforms.skyCenter={value:new THREE.Color('#030912')};
  floor.material.uniforms.skyEdge={value:new THREE.Color('#010205')};
@@ -97,20 +98,25 @@ export function createScene(element){
 
  const hudScene=new THREE.Scene(),hudCamera=camera.clone();
  let lastDamageCount=0,impactStarted=-Infinity;
+ let lastGameTime=0,lastRenderTime=performance.now()/1000;
  const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
  const hudPass=new RenderPass(hudScene,hudCamera);hudPass.clear=false;hudPass.clearDepth=true;composer.addPass(hudPass);
  const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.13,.07,0);composer.addPass(bloom);composer.addPass(new OutputPass());
  const stars=new THREE.InstancedMesh(blockGeometry,new THREE.MeshStandardMaterial({color:0xffefa4,emissive:0xffdf62,emissiveIntensity:.45,roughness:.85}),250);scene.add(stars);
  const starData=Array.from({length:250},()=>({x:Math.random()*2-1,y:Math.random()*2-1,size:.025+Math.random()**3*.065}));const matrix=new THREE.Matrix4();
  const rocks=[[-1,.7,2.4],[1,.76,1.8],[-1,-.6,2.7],[1,-.65,2.4],[-1,-.12,.6],[1,-.03,.7],[-1,-.9,.4],[1,.24,.5]].map(([side,y,r],i)=>{const rock=meteor(i+71,r);rock.userData.side=side;rock.userData.height=y;rock.userData.radius=r;rock.userData.travel=0;rock.userData.speed=.65+Math.random()*1.3;rock.userData.lane=0;rock.userData.depth=-2.5+Math.random()*4;scene.add(rock);return rock;});
- const player=makeShip();scene.add(player);const enemies=new Map(),bullets=new Map(),effects=new Map();
+ // Keep gameplay positions fixed; apply tilt separately around each object center.
+ const gameObjects=new THREE.Group();scene.add(gameObjects);
+ // Screen-up is perpendicular to the camera view, unlike world Y with this pitched camera.
+ const tiltAxis=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion).normalize();
+ const player=makeShip();gameObjects.add(player);const enemies=new Map(),bullets=new Map(),effects=new Map();
  const shotGeometry=new THREE.BoxGeometry(.09,.65,.14),shotMaterials={player:new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xeed7ff,emissiveIntensity:3}),enemy:new THREE.MeshStandardMaterial({color:0xffb467,emissive:0xff5a19,emissiveIntensity:2})};
  const hud=new THREE.Group();hudScene.add(hud);let scoreText,waveText,lifeText;let lastScore=-1,lastWave=-1,lastLives=-1;
  const fuelLabel=voxelText('E',COLORS.red,.13);hud.add(fuelLabel);
  const fuelMaterial=voxelMaterial(COLORS.green),fuelBlocks=new THREE.InstancedMesh(blockGeometry,fuelMaterial,24);hud.add(fuelBlocks);
  const lifeShips=new THREE.Group();hud.add(lifeShips);for(let i=0;i<5;i++){const ship=voxelMask(PLAYER,COLORS.green,.12,.25);ship.rotation.set(-.42,0,0);ship.position.x=i*1.08;lifeShips.add(ship);}
  const replaceText=(old,value,color,size)=>{if(old){hud.remove(old);old.traverse(object=>{if(object.isInstancedMesh)object.dispose();});}const text=voxelText(value,color,size);hud.add(text);return text;};
- const sync=(map,items,create,update)=>{const ids=new Set(items.map(i=>i.id));for(const [id,object]of map)if(!ids.has(id)){scene.remove(object);object.traverse(part=>{if(part.isInstancedMesh)part.dispose();});if(object.userData.ownMaterial)object.material.dispose();map.delete(id);}for(const item of items){let object=map.get(item.id);if(!object){object=create(item);map.set(item.id,object);scene.add(object);}update(object,item);}};
+ const sync=(map,items,create,update)=>{const ids=new Set(items.map(i=>i.id));for(const [id,object]of map)if(!ids.has(id)){gameObjects.remove(object);object.traverse(part=>{if(part.isInstancedMesh)part.dispose();});if(object.userData.ownMaterial)object.material.dispose();map.delete(id);}for(const item of items){let object=map.get(item.id);if(!object){object=create(item);map.set(item.id,object);gameObjects.add(object);}update(object,item);}};
  const ambientStart=performance.now();const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
  let halfWidth=12,halfHeight=14,scrollTime=0,lastBackgroundFrame=performance.now();
  const updateStars=()=>{
@@ -168,6 +174,7 @@ export function createScene(element){
  const observer=new ResizeObserver(layout);observer.observe(element);window.addEventListener('resize',layout);layout();
  return {setAppearance(value){
   appearanceRadius=value.radius;
+  tiltAngle=THREE.MathUtils.degToRad(value.tiltDegrees??10);tiltPreview=value.tiltPreview??0;
   bloom.strength=value.bloomStrength;bloom.radius=value.bloomRadius;bloom.threshold=value.bloomThreshold;
   const uniforms=floor.material.uniforms;
   uniforms.skyRadius.value=Math.min(halfWidth,halfHeight)*appearanceRadius;
@@ -175,9 +182,9 @@ export function createScene(element){
   uniforms.skySoftness.value=value.softness;uniforms.skyBrightness.value=value.brightness;
  },render(g,input,debugging=false){
   advanceBackground(!debugging&&(g.mode==='playing'||g.mode==='transition'));updateStars();
-  player.position.set(g.player.x,g.player.y,.15);player.rotation.y=0;player.visible=g.mode!=='gameover'&&(g.invincible<=0||Math.floor(g.elapsed*12)%2===0);
-  sync(enemies,g.enemies,e=>makeAlien(e.type),(alien,e)=>{alien.position.set(e.x,e.y,.15);const frame=(Math.floor(g.elapsed*4)+e.id)%2;alien.userData.frames.forEach((pose,i)=>pose.visible=i===frame);alien.rotation.z=0;});
-  sync(bullets,g.bullets,b=>new THREE.Mesh(shotGeometry,shotMaterials[b.owner]),(shot,b)=>{shot.position.set(b.x,b.y,.35);shot.rotation.z=-Math.atan2(b.vx,b.vy);});
+  player.position.set(g.player.x,g.player.y,.15);player.quaternion.identity();player.visible=g.mode!=='gameover'&&(g.invincible<=0||Math.floor(g.elapsed*12)%2===0);
+  sync(enemies,g.enemies,e=>makeAlien(e.type),(alien,e)=>{alien.position.set(e.x,e.y,.15);const frame=(Math.floor(g.elapsed*4)+e.id)%2;alien.userData.frames.forEach((pose,i)=>pose.visible=i===frame);alien.quaternion.identity();});
+  sync(bullets,g.bullets,b=>new THREE.Mesh(shotGeometry,shotMaterials[b.owner]),(shot,b)=>{shot.position.set(b.x,b.y,.35);shot.rotation.set(0,0,-Math.atan2(b.vx,b.vy));});
   sync(effects,g.effects,e=>{const debris=new THREE.InstancedMesh(blockGeometry,new THREE.MeshStandardMaterial({color:COLORS[e.color],emissive:COLORS[e.color],emissiveIntensity:1.5,transparent:true}),12);debris.userData.ownMaterial=true;return debris;},(debris,e)=>{debris.position.set(e.x,e.y,.3);for(let i=0;i<12;i++){const angle=i*2.399+e.seed,spread=e.age*4;matrix.compose(new THREE.Vector3(Math.cos(angle)*spread,Math.sin(angle)*spread,Math.sin(i)*e.age),new THREE.Quaternion(),new THREE.Vector3(.1,.1,.1));debris.setMatrixAt(i,matrix);}debris.instanceMatrix.needsUpdate=true;debris.material.opacity=1-e.age/.7;});
   hud.visible=['playing','transition'].includes(g.mode);
   if(g.score!==lastScore){scoreText=replaceText(scoreText,String(g.score).padStart(6,'0'),COLORS.yellow,.16);lastScore=g.score;}
@@ -189,6 +196,18 @@ export function createScene(element){
   lifeShips.position.set(halfWidth-4.6,-halfHeight+1.35,.6);lifeShips.children.forEach((ship,i)=>{ship.visible=i<Math.min(g.lives,3);});lifeText.position.set(halfWidth-1,-halfHeight+1.35,.6);
   updateMeteors();
   const now=performance.now()/1000;
+  const renderDt=Math.min(Math.max(0,now-lastRenderTime),.1),gameDt=g.elapsed-lastGameTime;
+  const active=g.mode==='playing'&&!debugging&&!reduceMotion.matches;
+  const preview=debugging&&!reduceMotion.matches?tiltPreview:null;
+  const reset=gameDt<0||gameDt>=.15||reduceMotion.matches;
+  const playerAngle=updateObjectTilt(player,g.player,{dt:renderDt,gameDt,active,preview,maxAngle:tiltAngle,reset:reset||g.damageCount!==lastDamageCount});
+  player.quaternion.setFromAxisAngle(tiltAxis,playerAngle);
+  for(const enemy of g.enemies){
+   const alien=enemies.get(enemy.id),diving=enemy.phase==='dive';
+   const angle=updateObjectTilt(alien,enemy,{dt:renderDt,gameDt,active,preview,maxAngle:tiltAngle*(diving?1.25:.3),fullSpeed:diving?7:1.8,reset});
+   alien.quaternion.setFromAxisAngle(tiltAxis,angle);
+  }
+  lastRenderTime=now;lastGameTime=g.elapsed;
   if(g.damageCount>lastDamageCount)impactStarted=now;
   if(g.damageCount<lastDamageCount||g.mode==='menu'||g.mode==='paused'||debugging||reduceMotion.matches)impactStarted=-Infinity;
   lastDamageCount=g.damageCount;
