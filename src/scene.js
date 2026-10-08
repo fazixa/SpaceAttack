@@ -78,26 +78,61 @@ export function createScene(element){
  const key=new THREE.DirectionalLight(0xffe6a7,1.8);key.position.set(-6,10,14);scene.add(key);
  const rim=new THREE.DirectionalLight(0x778eff,.35);rim.position.set(7,-3,9);scene.add(rim);
  const floor=new Reflector(new THREE.PlaneGeometry(180,180),{textureWidth:768,textureHeight:768,color:0x30363f});floor.position.z=-1.1;scene.add(floor);
- const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.18,.16,0);composer.addPass(bloom);composer.addPass(new OutputPass());
+ const hudScene=new THREE.Scene();
+ const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
+ const hudPass=new RenderPass(hudScene,camera);hudPass.clear=false;hudPass.clearDepth=true;composer.addPass(hudPass);
+ const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.18,.16,0);composer.addPass(bloom);composer.addPass(new OutputPass());
  const stars=new THREE.InstancedMesh(blockGeometry,new THREE.MeshStandardMaterial({color:0xffefa4,emissive:0xffdf62,emissiveIntensity:.45,roughness:.85}),250);scene.add(stars);
  const starData=Array.from({length:250},()=>({x:Math.random()*2-1,y:Math.random()*2-1,size:.025+Math.random()**3*.065}));const matrix=new THREE.Matrix4();
- const rocks=[[-1,.7,2.4],[1,.76,1.8],[-1,-.6,2.7],[1,-.65,2.4],[-1,-.12,.6],[1,-.03,.7],[-1,-.9,.4],[1,.24,.5]].map(([side,y,r],i)=>{const rock=meteor(i+71,r);rock.userData.side=side;rock.userData.height=y;rock.userData.radius=r;scene.add(rock);return rock;});
+ const rocks=[[-1,.7,2.4],[1,.76,1.8],[-1,-.6,2.7],[1,-.65,2.4],[-1,-.12,.6],[1,-.03,.7],[-1,-.9,.4],[1,.24,.5]].map(([side,y,r],i)=>{const rock=meteor(i+71,r);rock.userData.side=side;rock.userData.height=y;rock.userData.radius=r;rock.userData.travel=0;rock.userData.speed=1.25;rock.userData.lane=0;scene.add(rock);return rock;});
  const player=makeShip();scene.add(player);const enemies=new Map(),bullets=new Map(),effects=new Map();
  const shotGeometry=new THREE.BoxGeometry(.09,.65,.14),shotMaterials={player:new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xeed7ff,emissiveIntensity:3}),enemy:new THREE.MeshStandardMaterial({color:0xffb467,emissive:0xff5a19,emissiveIntensity:2})};
- const hud=new THREE.Group();scene.add(hud);let scoreText,waveText,lifeText;let lastScore=-1,lastWave=-1,lastLives=-1;
+ const hud=new THREE.Group();hudScene.add(hud);let scoreText,waveText,lifeText;let lastScore=-1,lastWave=-1,lastLives=-1;
  const fuelLabel=voxelText('E',COLORS.red,.13);hud.add(fuelLabel);
  const fuelMaterial=voxelMaterial(COLORS.green),fuelBlocks=new THREE.InstancedMesh(blockGeometry,fuelMaterial,24);hud.add(fuelBlocks);
  const lifeShips=new THREE.Group();hud.add(lifeShips);for(let i=0;i<5;i++){const ship=voxelMask(PLAYER,COLORS.green,.12,.25);ship.rotation.set(-.42,0,0);ship.position.x=i*1.08;lifeShips.add(ship);}
  const replaceText=(old,value,color,size)=>{if(old){hud.remove(old);old.traverse(object=>{if(object.isInstancedMesh)object.dispose();});}const text=voxelText(value,color,size);hud.add(text);return text;};
  const sync=(map,items,create,update)=>{const ids=new Set(items.map(i=>i.id));for(const [id,object]of map)if(!ids.has(id)){scene.remove(object);object.traverse(part=>{if(part.isInstancedMesh)part.dispose();});if(object.userData.ownMaterial)object.material.dispose();map.delete(id);}for(const item of items){let object=map.get(item.id);if(!object){object=create(item);map.set(item.id,object);scene.add(object);}update(object,item);}};
  const ambientStart=performance.now();const reduceMotion=window.matchMedia('(prefers-reduced-motion: reduce)');
- let halfWidth=12,halfHeight=14;
+ let halfWidth=12,halfHeight=14,scrollTime=0,lastBackgroundFrame=performance.now();
+ const updateStars=()=>{
+  const extent=halfHeight*1.08,span=extent*2;
+  starData.forEach((star,i)=>{
+   const y=star.y*extent-scrollTime*(.45+star.size*8);
+   const wrapped=((y+extent)%span+span)%span-extent;
+   matrix.compose(new THREE.Vector3(star.x*halfWidth*1.08,wrapped,-.2),new THREE.Quaternion(),new THREE.Vector3(star.size,star.size,star.size));stars.setMatrixAt(i,matrix);
+  });
+  stars.instanceMatrix.needsUpdate=true;stars.computeBoundingSphere();
+ };
+ const advanceBackground=active=>{
+  const now=performance.now(),dt=Math.min((now-lastBackgroundFrame)/1000,.1);lastBackgroundFrame=now;
+  if(!active||reduceMotion.matches)return;
+  scrollTime+=dt;
+  rocks.forEach((rock,i)=>{
+   rock.userData.travel+=dt*rock.userData.speed;
+   const y=rock.userData.height*halfHeight-rock.userData.travel;
+   if(y>-halfHeight-rock.userData.radius-1)return;
+   // Rebuild only beyond the lower edge, then enter naturally from above.
+   const radius=Math.random()<.45?.35+Math.random()*.65:1.4+Math.random()*1.5;
+   const replacement=meteor(Math.floor(Math.random()*4294967295),radius);
+   Object.assign(replacement.userData,{side:Math.random()<.5?-1:1,height:1+(radius+1+Math.random()*3)/halfHeight,radius,travel:0,speed:1.25,lane:radius<1?-.5-Math.random()*1.5:Math.random()*.4});
+   const gap=(a,b)=>1.3*(a+b)+1.6;
+   let spawnY=replacement.userData.height*halfHeight;
+   for(const other of rocks){if(other===rock||other.userData.side!==replacement.userData.side)continue;
+    spawnY=Math.max(spawnY,other.userData.height*halfHeight-other.userData.travel+gap(radius,other.userData.radius));
+   }
+   replacement.userData.height=spawnY/halfHeight;
+   scene.remove(rock);rock.traverse(part=>{if(part.isInstancedMesh)part.dispose();});rock.userData.material.dispose();
+   rocks[i]=replacement;scene.add(replacement);
+  });
+ };
+
  const updateMeteors=()=>{
   const skyTime=reduceMotion.matches?0:(performance.now()-ambientStart)/1000;
   rocks.forEach((rock,i)=>{
    const phase=i*1.7,direction=i%2?1:-1;
-   rock.position.x=rock.userData.side*(halfWidth+rock.userData.radius*.12)+Math.sin(skyTime*.2+phase)*.4;
-   rock.position.y=rock.userData.height*halfHeight+Math.sin(skyTime*.16+phase)*.6;
+   rock.position.x=rock.userData.side*(halfWidth-rock.userData.radius*.35-.5+rock.userData.lane)+Math.sin(skyTime*.2+phase)*.4;
+   rock.position.y=rock.userData.height*halfHeight-rock.userData.travel+Math.sin(skyTime*.16+phase)*.6;
    rock.position.z=.2+Math.sin(skyTime*.14+phase)*.18;
    rock.rotation.set(.35+Math.sin(skyTime*.18+phase)*.1,.45+skyTime*.06*direction,.2+Math.sin(skyTime*.13+phase)*.16);
   });
@@ -113,12 +148,22 @@ export function createScene(element){
   const centerY=(window.innerHeight/2-bounds.top-height/2)/scale;
   camera.left=centerX-width/(scale*2);camera.right=centerX+width/(scale*2);
   camera.top=centerY+height/(scale*2);camera.bottom=centerY-height/(scale*2);camera.updateProjectionMatrix();
-  starData.forEach((star,i)=>{matrix.compose(new THREE.Vector3(star.x*halfWidth*1.08,star.y*halfHeight*1.08,-.2),new THREE.Quaternion(),new THREE.Vector3(star.size,star.size,star.size));stars.setMatrixAt(i,matrix);});stars.instanceMatrix.needsUpdate=true;stars.computeBoundingSphere();
+  updateStars();
+  // Keep enough vertical clearance for tumbling and the full bobbing range.
+  for(const side of [-1,1]){
+   const lane=rocks.filter(rock=>rock.userData.side===side).sort((a,b)=>(b.userData.height*halfHeight-b.userData.travel)-(a.userData.height*halfHeight-a.userData.travel));
+   for(let i=1;i<lane.length;i++){
+    const above=lane[i-1],below=lane[i];
+    const limit=above.userData.height*halfHeight-above.userData.travel-1.3*(above.userData.radius+below.userData.radius)-1.6;
+    below.userData.travel=Math.max(below.userData.travel,below.userData.height*halfHeight-limit);
+   }
+  }
   updateMeteors();
   renderer.setSize(width,height,false);composer.setSize(width,height);composer.render();
  };
  const observer=new ResizeObserver(layout);observer.observe(element);window.addEventListener('resize',layout);layout();
  return {render(g,input){
+  advanceBackground(g.mode==='playing'||g.mode==='transition');updateStars();
   player.position.set(g.player.x,g.player.y,.15);player.rotation.y=0;player.visible=g.mode!=='gameover'&&(g.invincible<=0||Math.floor(g.elapsed*12)%2===0);
   sync(enemies,g.enemies,e=>makeAlien(e.type),(alien,e)=>{alien.position.set(e.x,e.y,.15);const frame=(Math.floor(g.elapsed*4)+e.id)%2;alien.userData.frames.forEach((pose,i)=>pose.visible=i===frame);alien.rotation.z=0;});
   sync(bullets,g.bullets,b=>new THREE.Mesh(shotGeometry,shotMaterials[b.owner]),(shot,b)=>{shot.position.set(b.x,b.y,.35);shot.rotation.z=-Math.atan2(b.vx,b.vy);});
@@ -133,5 +178,5 @@ export function createScene(element){
   lifeShips.position.set(halfWidth-4.6,-halfHeight+1.35,.6);lifeShips.children.forEach((ship,i)=>{ship.visible=i<Math.min(g.lives,3);});lifeText.position.set(halfWidth-1,-halfHeight+1.35,.6);
   updateMeteors();
   composer.render();
- },dispose(){observer.disconnect();window.removeEventListener('resize',layout);const geometries=new Set(),mats=new Set();scene.traverse(o=>{if(o.geometry)geometries.add(o.geometry);if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);}});scene.traverse(object=>{if(object.isInstancedMesh)object.dispose();});geometries.forEach(geometry=>geometry.dispose());mats.forEach(material=>material.dispose());floor.getRenderTarget().dispose();environment.dispose();bloom.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
+ },dispose(){observer.disconnect();window.removeEventListener('resize',layout);const geometries=new Set(),mats=new Set();const collect=o=>{if(o.geometry)geometries.add(o.geometry);if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);}};scene.traverse(collect);hudScene.traverse(collect);scene.traverse(object=>{if(object.isInstancedMesh)object.dispose();});hudScene.traverse(object=>{if(object.isInstancedMesh)object.dispose();});geometries.forEach(geometry=>geometry.dispose());mats.forEach(material=>material.dispose());floor.getRenderTarget().dispose();environment.dispose();bloom.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
 }
