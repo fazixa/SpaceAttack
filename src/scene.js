@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {impactOffset} from './cameraShake.js';
 import {advanceMeteorTravel} from './background.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
@@ -94,9 +95,10 @@ export function createScene(element){
   gl_FragColor.rgb += mix(skyEdge, skyCenter, centerLight) * skyBrightness;
   #include <tonemapping_fragment>`);
 
- const hudScene=new THREE.Scene();
+ const hudScene=new THREE.Scene(),hudCamera=camera.clone();
+ let lastDamageCount=0,impactStarted=-Infinity;
  const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
- const hudPass=new RenderPass(hudScene,camera);hudPass.clear=false;hudPass.clearDepth=true;composer.addPass(hudPass);
+ const hudPass=new RenderPass(hudScene,hudCamera);hudPass.clear=false;hudPass.clearDepth=true;composer.addPass(hudPass);
  const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.13,.07,0);composer.addPass(bloom);composer.addPass(new OutputPass());
  const stars=new THREE.InstancedMesh(blockGeometry,new THREE.MeshStandardMaterial({color:0xffefa4,emissive:0xffdf62,emissiveIntensity:.45,roughness:.85}),250);scene.add(stars);
  const starData=Array.from({length:250},()=>({x:Math.random()*2-1,y:Math.random()*2-1,size:.025+Math.random()**3*.065}));const matrix=new THREE.Matrix4();
@@ -158,7 +160,7 @@ export function createScene(element){
   const centerX=(bounds.left+width/2-window.innerWidth/2)/scale;
   const centerY=(window.innerHeight/2-bounds.top-height/2)/scale;
   camera.left=centerX-width/(scale*2);camera.right=centerX+width/(scale*2);
-  camera.top=centerY+height/(scale*2);camera.bottom=centerY-height/(scale*2);camera.updateProjectionMatrix();
+  camera.top=centerY+height/(scale*2);camera.bottom=centerY-height/(scale*2);camera.updateProjectionMatrix();hudCamera.copy(camera);
   updateStars();
   updateMeteors();
   renderer.setSize(width,height,false);composer.setSize(width,height);composer.render();
@@ -186,6 +188,12 @@ export function createScene(element){
   for(let i=0;i<24;i++){const filled=i<Math.ceil(g.fuel*24);matrix.compose(new THREE.Vector3(i*.24,0,0),new THREE.Quaternion().setFromEuler(new THREE.Euler(-.42,0,0)),new THREE.Vector3(.24,filled?.48:.06,.26));fuelBlocks.setMatrixAt(i,matrix);}fuelBlocks.instanceMatrix.needsUpdate=true;
   lifeShips.position.set(halfWidth-4.6,-halfHeight+1.35,.6);lifeShips.children.forEach((ship,i)=>{ship.visible=i<Math.min(g.lives,3);});lifeText.position.set(halfWidth-1,-halfHeight+1.35,.6);
   updateMeteors();
-  composer.render();
+  const now=performance.now()/1000;
+  if(g.damageCount>lastDamageCount)impactStarted=now;
+  if(g.damageCount<lastDamageCount||g.mode==='menu'||g.mode==='paused'||debugging||reduceMotion.matches)impactStarted=-Infinity;
+  lastDamageCount=g.damageCount;
+  const offset=impactOffset(now-impactStarted);
+  camera.position.set(offset.x,-5+offset.y,40);
+  try{composer.render();}finally{camera.position.set(0,-5,40);camera.updateMatrixWorld();}
  },dispose(){observer.disconnect();window.removeEventListener('resize',layout);const geometries=new Set(),mats=new Set();const collect=o=>{if(o.geometry)geometries.add(o.geometry);if(o.material){for(const m of Array.isArray(o.material)?o.material:[o.material])mats.add(m);}};scene.traverse(collect);hudScene.traverse(collect);scene.traverse(object=>{if(object.isInstancedMesh)object.dispose();});hudScene.traverse(object=>{if(object.isInstancedMesh)object.dispose();});geometries.forEach(geometry=>geometry.dispose());mats.forEach(material=>material.dispose());floor.getRenderTarget().dispose();environment.dispose();bloom.dispose();composer.dispose();renderer.dispose();renderer.domElement.remove();}};
 }

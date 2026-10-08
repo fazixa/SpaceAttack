@@ -1,7 +1,7 @@
 export const WORLD = { halfWidth: 11, playerY: -10 };
-export const waveSettings = wave => ({ fuelSeconds: Math.max(45, 100 - (wave - 1) * 5), diveInterval: Math.max(.65, 2.2 - (wave - 1) * .12), diveSpeed: Math.min(1.8, .65 + wave * .09), bulletSpeed: Math.min(15, 8 + wave * .45), maxDivers: Math.min(7, 1 + Math.ceil(wave / 2)) });
+export const waveSettings = wave => ({ fuelSeconds: Math.max(45, 100 - (wave - 1) * 5), diveInterval: Math.max(.65, 2.2 - (wave - 1) * .12), diveSpeed: Math.min(.5, .32 + (wave - 1) * .012), bulletSpeed: Math.min(26, 16 + (wave - 1) * .6), maxDivers: Math.min(7, 1 + Math.ceil(wave / 2)) });
 export function createGame(random = Math.random) {
-  return { mode: 'menu', score: 0, lives: 3, fuel: 1, wave: 1, player: {x: 0, y: WORLD.playerY}, enemies: [], bullets: [], effects: [], elapsed: 0, cooldown: 0, invincible: 0, diveTimer: 1.6, transition: 0, bonusGiven: false, random, nextId: 1, event: null };
+  return { mode: 'menu', score: 0, lives: 3, fuel: 1, wave: 1, player: {x: 0, y: WORLD.playerY}, enemies: [], bullets: [], effects: [], elapsed: 0, cooldown: 0, invincible: 0, diveTimer: 1.6, transition: 0, bonusGiven: false, random, nextId: 1, event: null, damageCount: 0 };
 }
 export function spawnWave(g) {
   g.enemies = [];
@@ -15,7 +15,7 @@ export function startGame(g) { const fresh = createGame(g.random); Object.assign
 function burst(g, x, y, color) { g.effects.push({id:g.nextId++, x, y, color, age:0, seed:g.random()*100}); }
 export function damagePlayer(g) {
   if (g.mode !== 'playing' || g.invincible > 0) return false;
-  burst(g,g.player.x,g.player.y,'cyan'); g.lives--; g.event = 'hit';
+  burst(g,g.player.x,g.player.y,'cyan'); g.lives--; g.damageCount++; g.event = 'hit';
   if (g.lives <= 0) {g.mode='gameover'; g.reason='Your fleet has fallen.';} else {g.player.x=0; g.invincible=2;}
   return true;
 }
@@ -32,7 +32,8 @@ export function updateGame(g, dt, input = {}) {
   if (g.mode === 'transition') {g.transition-=dt; if(g.transition<=0) {g.wave++;spawnWave(g);g.mode='playing';g.invincible=1.5;} return;}
   const s=waveSettings(g.wave);
   g.invincible=Math.max(0,g.invincible-dt); g.cooldown=Math.max(0,g.cooldown-dt);
-  g.player.x=Math.max(-10,Math.min(10,g.player.x+(Number(!!input.right)-Number(!!input.left))*12*dt));
+  const move=Number.isFinite(input.targetX)?Math.max(-12*dt,Math.min(12*dt,input.targetX-g.player.x)):(Number(!!input.right)-Number(!!input.left))*12*dt;
+  g.player.x=Math.max(-10,Math.min(10,g.player.x+move));
   g.fuel=Math.max(0,g.fuel-dt/s.fuelSeconds);
   if(g.fuel<=0) {g.mode='gameover';g.reason='Fuel reserves exhausted.';return;}
   if(input.fire && g.cooldown<=0) {g.bullets.push({id:g.nextId++,x:g.player.x,y:g.player.y+.85,vy:24,vx:0,owner:'player'});g.cooldown=.19;g.event='fire';}
