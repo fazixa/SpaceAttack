@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {advanceMeteorTravel} from './background.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
 import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
@@ -68,7 +69,9 @@ function meteor(seed,radius){
  const material=new THREE.MeshStandardMaterial({color:0x50445d,roughness:.86,metalness:0,envMapIntensity:.15});
  const blocks=new THREE.InstancedMesh(blockGeometry,material,positions.length);const matrix=new THREE.Matrix4(),color=new THREE.Color();
  positions.forEach(([x,y,z,t],i)=>{matrix.compose(new THREE.Vector3(x,y,z),new THREE.Quaternion(),new THREE.Vector3(step,step,step));blocks.setMatrixAt(i,matrix);color.setRGB(t*.7,t*.64,t*.8);blocks.setColorAt(i,color);});
- root.add(blocks);root.rotation.set(.35,.45,.2);root.userData.material=material;return root;
+ root.add(blocks);root.rotation.set(.35,.45,.2);root.userData.material=material;
+ root.userData.motion={phase:Math.random()*Math.PI*2,pitch:.35+(Math.random()-.5)*.3,yaw:Math.random()*Math.PI,roll:(Math.random()-.5)*.6,spinX:(Math.random()-.5)*.08,spinY:(Math.random()<.5?-1:1)*(.025+Math.random()*.07),spinZ:(Math.random()-.5)*.08};
+ return root;
 }
 export function createScene(element){
  const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));renderer.setClearColor(0x020407);renderer.toneMapping=THREE.ReinhardToneMapping;renderer.toneMappingExposure=1.5;element.appendChild(renderer.domElement);
@@ -77,14 +80,14 @@ export function createScene(element){
  scene.add(new THREE.HemisphereLight(0x989ec6,0x171420,.3));
  const key=new THREE.DirectionalLight(0xffe6a7,1.8);key.position.set(-6,10,14);scene.add(key);
  const rim=new THREE.DirectionalLight(0x778eff,.35);rim.position.set(7,-3,9);scene.add(rim);
- const floor=new Reflector(new THREE.PlaneGeometry(180,180),{textureWidth:768,textureHeight:768,color:0x30363f});floor.position.z=-1.1;scene.add(floor);
+ const floor=new Reflector(new THREE.PlaneGeometry(180,180),{textureWidth:768,textureHeight:768,color:0x30363f});floor.position.z=-7;scene.add(floor);
  const hudScene=new THREE.Scene();
  const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
  const hudPass=new RenderPass(hudScene,camera);hudPass.clear=false;hudPass.clearDepth=true;composer.addPass(hudPass);
  const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.18,.16,0);composer.addPass(bloom);composer.addPass(new OutputPass());
  const stars=new THREE.InstancedMesh(blockGeometry,new THREE.MeshStandardMaterial({color:0xffefa4,emissive:0xffdf62,emissiveIntensity:.45,roughness:.85}),250);scene.add(stars);
  const starData=Array.from({length:250},()=>({x:Math.random()*2-1,y:Math.random()*2-1,size:.025+Math.random()**3*.065}));const matrix=new THREE.Matrix4();
- const rocks=[[-1,.7,2.4],[1,.76,1.8],[-1,-.6,2.7],[1,-.65,2.4],[-1,-.12,.6],[1,-.03,.7],[-1,-.9,.4],[1,.24,.5]].map(([side,y,r],i)=>{const rock=meteor(i+71,r);rock.userData.side=side;rock.userData.height=y;rock.userData.radius=r;rock.userData.travel=0;rock.userData.speed=1.25;rock.userData.lane=0;scene.add(rock);return rock;});
+ const rocks=[[-1,.7,2.4],[1,.76,1.8],[-1,-.6,2.7],[1,-.65,2.4],[-1,-.12,.6],[1,-.03,.7],[-1,-.9,.4],[1,.24,.5]].map(([side,y,r],i)=>{const rock=meteor(i+71,r);rock.userData.side=side;rock.userData.height=y;rock.userData.radius=r;rock.userData.travel=0;rock.userData.speed=.65+Math.random()*1.3;rock.userData.lane=0;rock.userData.depth=-2.5+Math.random()*4;scene.add(rock);return rock;});
  const player=makeShip();scene.add(player);const enemies=new Map(),bullets=new Map(),effects=new Map();
  const shotGeometry=new THREE.BoxGeometry(.09,.65,.14),shotMaterials={player:new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xeed7ff,emissiveIntensity:3}),enemy:new THREE.MeshStandardMaterial({color:0xffb467,emissive:0xff5a19,emissiveIntensity:2})};
  const hud=new THREE.Group();hudScene.add(hud);let scoreText,waveText,lifeText;let lastScore=-1,lastWave=-1,lastLives=-1;
@@ -108,20 +111,14 @@ export function createScene(element){
   const now=performance.now(),dt=Math.min((now-lastBackgroundFrame)/1000,.1);lastBackgroundFrame=now;
   if(!active||reduceMotion.matches)return;
   scrollTime+=dt;
+  advanceMeteorTravel(rocks,dt);
   rocks.forEach((rock,i)=>{
-   rock.userData.travel+=dt*rock.userData.speed;
    const y=rock.userData.height*halfHeight-rock.userData.travel;
    if(y>-halfHeight-rock.userData.radius-1)return;
    // Rebuild only beyond the lower edge, then enter naturally from above.
    const radius=Math.random()<.45?.35+Math.random()*.65:1.4+Math.random()*1.5;
    const replacement=meteor(Math.floor(Math.random()*4294967295),radius);
-   Object.assign(replacement.userData,{side:Math.random()<.5?-1:1,height:1+(radius+1+Math.random()*3)/halfHeight,radius,travel:0,speed:1.25,lane:radius<1?-.5-Math.random()*1.5:Math.random()*.4});
-   const gap=(a,b)=>1.3*(a+b)+1.6;
-   let spawnY=replacement.userData.height*halfHeight;
-   for(const other of rocks){if(other===rock||other.userData.side!==replacement.userData.side)continue;
-    spawnY=Math.max(spawnY,other.userData.height*halfHeight-other.userData.travel+gap(radius,other.userData.radius));
-   }
-   replacement.userData.height=spawnY/halfHeight;
+   Object.assign(replacement.userData,{side:Math.random()<.5?-1:1,height:1+(radius+1+Math.random()*3)/halfHeight,radius,travel:0,speed:.65+Math.random()*1.3,lane:radius<1?-.5-Math.random()*1.5:Math.random()*.4,depth:-2.5+Math.random()*4});
    scene.remove(rock);rock.traverse(part=>{if(part.isInstancedMesh)part.dispose();});rock.userData.material.dispose();
    rocks[i]=replacement;scene.add(replacement);
   });
@@ -130,11 +127,11 @@ export function createScene(element){
  const updateMeteors=()=>{
   const skyTime=reduceMotion.matches?0:(performance.now()-ambientStart)/1000;
   rocks.forEach((rock,i)=>{
-   const phase=i*1.7,direction=i%2?1:-1;
+   const motion=rock.userData.motion,phase=motion.phase;
    rock.position.x=rock.userData.side*(halfWidth-rock.userData.radius*.35-.5+rock.userData.lane)+Math.sin(skyTime*.2+phase)*.4;
    rock.position.y=rock.userData.height*halfHeight-rock.userData.travel+Math.sin(skyTime*.16+phase)*.6;
-   rock.position.z=.2+Math.sin(skyTime*.14+phase)*.18;
-   rock.rotation.set(.35+Math.sin(skyTime*.18+phase)*.1,.45+skyTime*.06*direction,.2+Math.sin(skyTime*.13+phase)*.16);
+   rock.position.z=rock.userData.depth+Math.sin(skyTime*.14+phase)*.18;
+   rock.rotation.set(motion.pitch+skyTime*motion.spinX,motion.yaw+skyTime*motion.spinY,motion.roll+skyTime*motion.spinZ);
   });
  };
 
@@ -149,15 +146,6 @@ export function createScene(element){
   camera.left=centerX-width/(scale*2);camera.right=centerX+width/(scale*2);
   camera.top=centerY+height/(scale*2);camera.bottom=centerY-height/(scale*2);camera.updateProjectionMatrix();
   updateStars();
-  // Keep enough vertical clearance for tumbling and the full bobbing range.
-  for(const side of [-1,1]){
-   const lane=rocks.filter(rock=>rock.userData.side===side).sort((a,b)=>(b.userData.height*halfHeight-b.userData.travel)-(a.userData.height*halfHeight-a.userData.travel));
-   for(let i=1;i<lane.length;i++){
-    const above=lane[i-1],below=lane[i];
-    const limit=above.userData.height*halfHeight-above.userData.travel-1.3*(above.userData.radius+below.userData.radius)-1.6;
-    below.userData.travel=Math.max(below.userData.travel,below.userData.height*halfHeight-limit);
-   }
-  }
   updateMeteors();
   renderer.setSize(width,height,false);composer.setSize(width,height);composer.render();
  };
