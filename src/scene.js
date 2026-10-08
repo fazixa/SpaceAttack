@@ -81,10 +81,23 @@ export function createScene(element){
  const key=new THREE.DirectionalLight(0xffe6a7,1.8);key.position.set(-6,10,14);scene.add(key);
  const rim=new THREE.DirectionalLight(0x778eff,.35);rim.position.set(7,-3,9);scene.add(rim);
  const floor=new Reflector(new THREE.PlaneGeometry(180,180),{textureWidth:768,textureHeight:768,color:0x30363f});floor.position.z=-7;scene.add(floor);
+ // A circular blue wash beneath the scene, anchored to the full-page sky.
+ let appearanceRadius=1.4;
+ floor.material.uniforms.skyRadius={value:18};
+ floor.material.uniforms.skyCenter={value:new THREE.Color('#030912')};
+ floor.material.uniforms.skyEdge={value:new THREE.Color('#010205')};
+ floor.material.uniforms.skySoftness={value:.6};
+ floor.material.uniforms.skyBrightness={value:1};
+ floor.material.vertexShader=floor.material.vertexShader.replace('varying vec4 vUv;', 'varying vec4 vUv; varying vec2 skyPosition;').replace('vUv = textureMatrix', 'skyPosition = (modelViewMatrix * vec4(position, 1.0)).xy; vUv = textureMatrix');
+ floor.material.fragmentShader=floor.material.fragmentShader.replace('varying vec4 vUv;', 'varying vec4 vUv; varying vec2 skyPosition; uniform float skyRadius; uniform vec3 skyCenter; uniform vec3 skyEdge; uniform float skySoftness; uniform float skyBrightness;').replace('#include <tonemapping_fragment>', `
+  float centerLight = 1.0 - smoothstep(skyRadius * (1.0 - skySoftness), skyRadius, length(skyPosition));
+  gl_FragColor.rgb += mix(skyEdge, skyCenter, centerLight) * skyBrightness;
+  #include <tonemapping_fragment>`);
+
  const hudScene=new THREE.Scene();
  const composer=new EffectComposer(renderer);composer.addPass(new RenderPass(scene,camera));
  const hudPass=new RenderPass(hudScene,camera);hudPass.clear=false;hudPass.clearDepth=true;composer.addPass(hudPass);
- const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.18,.16,0);composer.addPass(bloom);composer.addPass(new OutputPass());
+ const bloom=new UnrealBloomPass(new THREE.Vector2(1,1),.13,.07,0);composer.addPass(bloom);composer.addPass(new OutputPass());
  const stars=new THREE.InstancedMesh(blockGeometry,new THREE.MeshStandardMaterial({color:0xffefa4,emissive:0xffdf62,emissiveIntensity:.45,roughness:.85}),250);scene.add(stars);
  const starData=Array.from({length:250},()=>({x:Math.random()*2-1,y:Math.random()*2-1,size:.025+Math.random()**3*.065}));const matrix=new THREE.Matrix4();
  const rocks=[[-1,.7,2.4],[1,.76,1.8],[-1,-.6,2.7],[1,-.65,2.4],[-1,-.12,.6],[1,-.03,.7],[-1,-.9,.4],[1,.24,.5]].map(([side,y,r],i)=>{const rock=meteor(i+71,r);rock.userData.side=side;rock.userData.height=y;rock.userData.radius=r;rock.userData.travel=0;rock.userData.speed=.65+Math.random()*1.3;rock.userData.lane=0;rock.userData.depth=-2.5+Math.random()*4;scene.add(rock);return rock;});
@@ -140,6 +153,7 @@ export function createScene(element){
   // Use the full page's world scale in every mode; menus crop that view.
   const scale=Math.min(window.innerWidth/24,window.innerHeight/28,720/24);
   halfWidth=window.innerWidth/(scale*2);halfHeight=window.innerHeight/(scale*2);
+  floor.material.uniforms.skyRadius.value=Math.min(halfWidth,halfHeight)*appearanceRadius;
   const bounds=element.getBoundingClientRect();
   const centerX=(bounds.left+width/2-window.innerWidth/2)/scale;
   const centerY=(window.innerHeight/2-bounds.top-height/2)/scale;
@@ -150,8 +164,15 @@ export function createScene(element){
   renderer.setSize(width,height,false);composer.setSize(width,height);composer.render();
  };
  const observer=new ResizeObserver(layout);observer.observe(element);window.addEventListener('resize',layout);layout();
- return {render(g,input){
-  advanceBackground(g.mode==='playing'||g.mode==='transition');updateStars();
+ return {setAppearance(value){
+  appearanceRadius=value.radius;
+  bloom.strength=value.bloomStrength;bloom.radius=value.bloomRadius;bloom.threshold=value.bloomThreshold;
+  const uniforms=floor.material.uniforms;
+  uniforms.skyRadius.value=Math.min(halfWidth,halfHeight)*appearanceRadius;
+  uniforms.skyCenter.value.set(value.center);uniforms.skyEdge.value.set(value.edge);
+  uniforms.skySoftness.value=value.softness;uniforms.skyBrightness.value=value.brightness;
+ },render(g,input,debugging=false){
+  advanceBackground(!debugging&&(g.mode==='playing'||g.mode==='transition'));updateStars();
   player.position.set(g.player.x,g.player.y,.15);player.rotation.y=0;player.visible=g.mode!=='gameover'&&(g.invincible<=0||Math.floor(g.elapsed*12)%2===0);
   sync(enemies,g.enemies,e=>makeAlien(e.type),(alien,e)=>{alien.position.set(e.x,e.y,.15);const frame=(Math.floor(g.elapsed*4)+e.id)%2;alien.userData.frames.forEach((pose,i)=>pose.visible=i===frame);alien.rotation.z=0;});
   sync(bullets,g.bullets,b=>new THREE.Mesh(shotGeometry,shotMaterials[b.owner]),(shot,b)=>{shot.position.set(b.x,b.y,.35);shot.rotation.z=-Math.atan2(b.vx,b.vy);});

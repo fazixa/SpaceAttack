@@ -1,23 +1,30 @@
+import AppearancePanel,{loadAppearance} from './AppearancePanel.jsx';
 import {PixelText,PixelAlien} from './PixelText.jsx';
 import React,{useEffect,useRef,useState} from 'react';import {createRoot} from 'react-dom/client';
 import {createGame,spawnWave,startGame,updateGame} from './game.js';import {createScene} from './scene.js';import {createAudio} from './audio.js';import './style.css';
 const format=n=>String(n).padStart(6,'0');
-function App(){const shell=useRef(null),helpRef=useRef(false),viewport=useRef(null),game=useRef(null),audio=useRef(null),keys=useRef({});const [hud,setHud]=useState({mode:'menu',score:0,lives:3,fuel:1,wave:1});const [best,setBest]=useState(()=>{try{return Number(localStorage.getItem('space-attack-best'))||0;}catch{return 0;}});const bestRef=useRef(best);const [muted,setMuted]=useState(false),[error,setError]=useState('');const [help,setHelp]=useState(false);const showHelp=value=>{helpRef.current=value;setHelp(value);};
+function App(){
+ const sceneRef=useRef(null),debugRef=useRef(false);
+ const [debugOpen,setDebugOpen]=useState(false),[appearance,setAppearance]=useState(loadAppearance);
+ useEffect(()=>{sceneRef.current?.setAppearance(appearance);try{localStorage.setItem('space-attack-appearance',JSON.stringify(appearance));}catch{}},[appearance]);
+ const toggleDebug=()=>{debugRef.current=!debugRef.current;setDebugOpen(debugRef.current);keys.current={};};
+const shell=useRef(null),helpRef=useRef(false),viewport=useRef(null),game=useRef(null),audio=useRef(null),keys=useRef({});const [hud,setHud]=useState({mode:'menu',score:0,lives:3,fuel:1,wave:1});const [best,setBest]=useState(()=>{try{return Number(localStorage.getItem('space-attack-best'))||0;}catch{return 0;}});const bestRef=useRef(best);const [muted,setMuted]=useState(false),[error,setError]=useState('');const [help,setHelp]=useState(false);const showHelp=value=>{helpRef.current=value;setHelp(value);};
  const prepareExpansion=()=>{const r=viewport.current.getBoundingClientRect();viewport.current.style.setProperty('--scene-top',`${r.top}px`);viewport.current.style.setProperty('--scene-right',`${window.innerWidth-r.right}px`);viewport.current.style.setProperty('--scene-bottom',`${window.innerHeight-r.bottom}px`);viewport.current.style.setProperty('--scene-left',`${r.left}px`);};
  const begin=()=>{if(!game.current||error)return;audio.current.unlock();prepareExpansion();showHelp(false);keys.current={};startGame(game.current);setHud({...game.current});viewport.current.focus();};
  const pause=()=>{const g=game.current;if(!g)return;if(g.mode==='playing'||g.mode==='transition'){g.beforePause=g.mode;g.mode='paused';}else if(g.mode==='paused'){g.mode=g.beforePause||'playing';showHelp(false);prepareExpansion();}keys.current={};setHud({...g});};
- useEffect(()=>{const g=createGame();spawnWave(g);game.current=g;audio.current=createAudio();let scene;try{scene=createScene(viewport.current);}catch{setError('This game needs a browser with WebGL enabled.');return;}
- const down=e=>{if(['ArrowLeft','ArrowRight','Space','Escape','Enter','KeyA','KeyD'].includes(e.code))e.preventDefault();keys.current[e.code]=true;if(e.repeat)return;if(e.code==='Enter'&&(g.mode==='menu'||g.mode==='gameover'))begin();else if(e.code==='Escape'){if(helpRef.current)showHelp(false);else pause();}};const up=e=>{keys.current[e.code]=false;};const blur=()=>{keys.current={};if(g.mode==='playing'||g.mode==='transition'){g.beforePause=g.mode;g.mode='paused';setHud({...g});}};
+ useEffect(()=>{const g=createGame();spawnWave(g);game.current=g;audio.current=createAudio();let scene;try{scene=createScene(viewport.current);sceneRef.current=scene;scene.setAppearance(appearance);}catch{setError('This game needs a browser with WebGL enabled.');return;}
+ const down=e=>{if(debugRef.current||e.target.closest('input,textarea,select,button'))return;if(['ArrowLeft','ArrowRight','Space','Escape','Enter','KeyA','KeyD'].includes(e.code))e.preventDefault();keys.current[e.code]=true;if(e.repeat)return;if(e.code==='Enter'&&(g.mode==='menu'||g.mode==='gameover'))begin();else if(e.code==='Escape'){if(helpRef.current)showHelp(false);else pause();}};const up=e=>{keys.current[e.code]=false;};const blur=()=>{keys.current={};if(g.mode==='playing'||g.mode==='transition'){g.beforePause=g.mode;g.mode='paused';setHud({...g});}};
 
  window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('blur',blur);const visibility=()=>{if(document.hidden)blur();};document.addEventListener('visibilitychange',visibility);
- let frame,last=performance.now(),acc=0,ui=0;const tick=now=>{const delta=Math.min((now-last)/1000,.1);last=now;acc+=delta;const input={left:keys.current.ArrowLeft||keys.current.KeyA,right:keys.current.ArrowRight||keys.current.KeyD,fire:keys.current.Space};while(acc>=1/120){updateGame(g,1/120,input);if(g.event){audio.current.play(g.event);g.event=null;}acc-=1/120;}
+ let frame,last=performance.now(),acc=0,ui=0;const tick=now=>{const delta=Math.min((now-last)/1000,.1);last=now;acc+=delta;const input={left:keys.current.ArrowLeft||keys.current.KeyA,right:keys.current.ArrowRight||keys.current.KeyD,fire:keys.current.Space};while(acc>=1/120){if(!debugRef.current)updateGame(g,1/120,input);if(g.event){audio.current.play(g.event);g.event=null;}acc-=1/120;}
  if(g.score>bestRef.current){bestRef.current=g.score;setBest(g.score);try{localStorage.setItem('space-attack-best',String(g.score));}catch{}}
- scene.render(g,input);ui+=delta;if(ui>.06){setHud({mode:g.mode,score:g.score,lives:g.lives,fuel:g.fuel,wave:g.wave,reason:g.reason,bonusGiven:g.bonusGiven});ui=0;}frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);
+ scene.render(g,input,debugRef.current);ui+=delta;if(ui>.06){setHud({mode:g.mode,score:g.score,lives:g.lives,fuel:g.fuel,wave:g.wave,reason:g.reason,bonusGiven:g.bonusGiven});ui=0;}frame=requestAnimationFrame(tick);};frame=requestAnimationFrame(tick);
  return()=>{cancelAnimationFrame(frame);window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('blur',blur);document.removeEventListener('visibilitychange',visibility);scene.dispose();audio.current.dispose();};},[]);
  const toggleSound=()=>{const value=!muted;setMuted(value);audio.current.setEnabled(!value);};
  const overlay=['menu','paused','gameover'].includes(hud.mode)||error;
  const touch=(code,active)=>{keys.current[code]=active;};
- return <main className="shell" ref={shell}>
+ return <main className={`shell ${debugOpen?'debug-open':''}`} ref={shell} style={{'--sky-center':appearance.center,'--sky-edge':appearance.edge}}>
+ <AppearancePanel open={debugOpen} onToggle={toggleDebug} value={appearance} onChange={setAppearance}/>
  <div className="game-column">
  <div className={'hud-top voxel-hud '+(overlay?'concealed':'')}>
  <div><span className="label">SCORE</span><strong>{format(hud.score)}</strong></div>
@@ -36,7 +43,10 @@ function App(){const shell=useRef(null),helpRef=useRef(false),viewport=useRef(nu
  {hud.mode==='paused'&&<button className="quiet-button" onClick={()=>{game.current.mode='menu';showHelp(false);keys.current={};setHud({...game.current});}}>QUIT TO START</button>}
  </>}
  </div></div>}
- {hud.mode==='transition'&&<div className="wave-banner"><h2>WAVE {String(hud.wave).padStart(2,'0')} CLEAR</h2><p>Refueling…</p></div>}
+ {hud.mode==='transition'&&<div className="wave-banner" role="status" aria-live="polite">
+ <h2 className="wave-clear-title" aria-label={`Wave ${hud.wave} clear`}><PixelText className="wave-clear-number">{`WAVE ${String(hud.wave).padStart(2,'0')}`}</PixelText><PixelText className="wave-clear-word">CLEAR</PixelText></h2>
+ <div className="refuel-blocks" aria-hidden="true">{Array.from({length:12},(_,i)=><span key={i} style={{'--block':i}}/>)}</div><p>REFUELING</p>
+ </div>}
  {hud.mode==='playing'&&hud.fuel<.2&&<div className="fuel-warning">LOW FUEL</div>}
  </div>
  <div className={'fuel-panel voxel-fuel '+(hud.fuel<.2?'low ':'')+(overlay?'concealed':'')}><div className="fuel-title"><span>FUEL</span><b>{Math.ceil(hud.fuel*100)}%</b></div><div className="fuel-track"><div style={{width:`${hud.fuel*100}%`}}/></div></div>

@@ -16,7 +16,7 @@
 .voxel-hud>div,.voxel-fuel{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .voxel-hud .menu-button{position:fixed;top:12px;right:12px;width:30px;height:30px;background:#07101a99;border-color:#34425177;z-index:4}.voxel-hud{pointer-events:none}.voxel-hud .menu-button{pointer-events:auto}
 /* Voxel arcade menus share the playfield's colors and block silhouettes. */
-.shell{background:radial-gradient(ellipse at center,#0e1115,#030508 75%)}
+.shell{background:radial-gradient(circle at center,#091522,#020408 75%)}
 .playfield:not(.playfield-playing){border-radius:0;border-color:#30342b;box-shadow:0 0 45px #0008}
 .overlay{background:linear-gradient(#03060896,#030608ed 40%,#030608ed 75%,#030608b8);backdrop-filter:blur(1.5px);padding:28px}
 .overlay-card{max-width:320px;padding:6px 5px 14px;scrollbar-color:#39514b #030608}
@@ -53,3 +53,27 @@
 .menu-gameover .arcade-title{filter:drop-shadow(0 0 5px #ff321c20)}
 .menu-gameover .arcade-title>.pixel-text{width:calc(100% * var(--glyph-columns) / 23)}
 .primary .pixel-depth,.run-stats .pixel-depth{display:none}
+.shell{background:radial-gradient(circle at center,var(--sky-center,#030912),var(--sky-edge,#010205) 75%)}
+.appearance-debug{position:fixed;right:12px;bottom:12px;z-index:20;font-family:'Space Mono',monospace;font-size:11px;max-width:calc(100vw - 24px)}
+.appearance-toggle{display:block;margin-left:auto;background:#08151eee;color:#9feef0;border:1px solid #385762;padding:10px 12px;font-size:10px}
+.appearance-panel{position:absolute;bottom:44px;right:0;width:280px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 84px);overflow:auto;background:#081119f5;border:1px solid #385762;padding:18px;box-shadow:0 8px 30px #0009}
+.appearance-panel h3{margin:0;color:#f7e568;font-size:13px;letter-spacing:1px}.appearance-panel p{color:#90a5af;font-size:10px;line-height:1.6;margin:8px 0 18px}.appearance-panel p:last-child{margin:14px 0 0}
+.color-control{display:flex;align-items:center;gap:8px;margin:16px 0}.color-control span{flex:1}.color-control code{font-size:10px;color:#a1b7c4}.color-control input{width:30px;height:28px;padding:0;border:0;background:none;cursor:pointer}
+.range-control{display:block;margin:20px 0}.range-control span{display:flex;justify-content:space-between}.range-control output{color:#7eeaf1}.range-control input{width:100%;margin:10px 0 0;accent-color:#05dcec}
+.appearance-actions{display:flex;gap:10px}.appearance-actions button{flex:1;background:#152a34;border:1px solid #3a626e;color:#d5e8ec;font-size:10px;padding:9px}
+.debug-open .overlay,.debug-open .wave-banner{visibility:hidden;pointer-events:none}
+
+.appearance-panel .bloom-heading{border-top:1px solid #29414d;padding-top:18px;margin-top:22px}
+
+/* Wave completion uses the same voxel lettering and fuel colors as the game. */
+.wave-banner{position:fixed;inset:0;background:radial-gradient(circle,#030912d9 0%,#03060870 70%);pointer-events:none;gap:0;padding:24px}
+.wave-banner .wave-clear-title{display:flex;flex-direction:column;align-items:center;gap:20px;width:min(78vw,330px);margin:0 0 26px;line-height:1}
+.wave-clear-number{width:78%;color:#05def1;filter:drop-shadow(0 0 5px #05def125)}
+.wave-clear-number .pixel-depth{fill:#087e86}
+.wave-clear-word{color:#ffeb14;filter:drop-shadow(0 0 7px #ffeb1425)}
+.refuel-blocks{display:flex;gap:3px;width:min(50vw,190px);height:10px}
+.refuel-blocks span{flex:1;background:#3cff19;box-shadow:0 3px #106609,0 0 5px #3cff1920;animation:refuel-shimmer 1s steps(3,end) infinite;animation-delay:calc(var(--block) * .06s)}
+.wave-banner p{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:2px;color:#b0c1b5;margin:16px 0 0}
+@keyframes refuel-shimmer{0%,100%{opacity:.35}50%{opacity:1}}
+@media(max-height:450px){.wave-banner .wave-clear-title{width:min(58vw,220px);gap:12px;margin-bottom:18px}}
+@media(prefers-reduced-motion:reduce){.refuel-blocks span{animation:none}}
